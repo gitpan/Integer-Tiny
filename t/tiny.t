@@ -3,10 +3,11 @@
 use utf8;
 use strict;
 use warnings;
-use bigint;
 
-use Test::More 'tests' => 22;
+use Test::More 'tests' => 23;
 use Test::Exception;
+
+use Math::BigInt;
 
 use FindBin;
 use lib "$FindBin::Bin/../lib";
@@ -49,3 +50,21 @@ is( $it->decrypt(
     'decrypt utf'
 );
 
+{
+
+    # heavy load test
+    # encrypt 512-digit number using Katakana 95-char key
+
+    my $n = 1 + int rand 9;
+    $n .= join('', map { int rand 10 } 1 .. 511);
+
+    my $huge_number = Math::BigInt->new($n);
+
+    my $katakana = join('', map { chr $_ } 0x30a1 .. 0x30ff);
+
+    $it = Integer::Tiny->new($katakana);
+    my $encrypted = $it->encrypt($huge_number);
+    my $decrypted = $it->decrypt($encrypted);
+
+    is($huge_number->bstr(), $decrypted->bstr(), '512-digit number using Katakana 95-char key');
+}

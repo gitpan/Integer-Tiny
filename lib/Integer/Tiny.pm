@@ -3,11 +3,12 @@ package Integer::Tiny;
 use utf8;
 use strict;
 use warnings;
-use bigint;
+
+use Math::BigInt;
 
 use Carp;
 
-our $VERSION = '0.2';
+our $VERSION = '0.3';
 
 sub new {
     my ($class, $alphabet) = @_;
@@ -33,18 +34,29 @@ sub new {
 }
 
 sub encrypt {
-    my ($self, $integer) = @_;
+    my ($self, $value) = @_;
+    my $integer;
 
-    confess 'Value to encrypt not given' unless defined $integer;
-    confess 'Value to encrypt is not an Integer' unless $integer =~ m/^\d+$/;
+    confess 'Value to encrypt not given' unless defined $value;
+
+    if (ref $value eq 'Math::BigInt') {
+        $integer = $value->copy();
+    }
+    elsif ($value =~ m/^\d+$/) {
+        $integer = Math::BigInt->new($value);
+    }
+    else {
+        confess 'Value to encrypt is not an Integer or Math::BigInt object';
+    }
 
     my $encrypted = '';
 
     do {
-        my $mod = $integer % $self->{'len'};
+        my $mod = $integer->copy();
+        $mod->bmod($self->{'len'});
         $encrypted = $self->{'p2c'}->{$mod} . $encrypted;
-        $integer   = int($integer / $self->{'len'});
-    } while ($integer);
+        $integer->bdiv($self->{'len'})->bfloor();
+    } while ($integer->is_pos());
 
     return $encrypted;
 
@@ -57,13 +69,16 @@ sub decrypt {
     confess 'Value encrypted is an empty string' unless length $encrypted;
 
     my $pos     = 0;
-    my $integer = 0;
+    my $integer = Math::BigInt->new(0);
     my @chars   = reverse split //, $encrypted;
 
     confess 'Value encrypted contains characters not present in key' if grep { !defined $self->{'c2p'}->{$_} } @chars;
 
     for my $ch (@chars) {
-        $integer += $self->{'c2p'}->{$ch} * $self->{'len'}**$pos++;
+        my $to_add = Math::BigInt->new($self->{'len'});
+        $to_add->bpow($pos++);
+        $to_add->bmul($self->{'c2p'}->{$ch});
+        $integer->badd($to_add);
     }
 
     return $integer;
@@ -77,7 +92,7 @@ Integer::Tiny - Shorten and obfuscate your Integer values. Just like IDs on YouT
 
     use Integer::Tiny;
     $it = Integer::Tiny->new('0WEMACKGVPHRQNST862UYZ3FL4X17O59DJIB');
-    print $it->encrypt(12345678);   # prints 'GQZB2'
+    print $it->encrypt('12345678');   # prints 'GQZB2'
     print $it->decrypt('GQZB2');    # prints '12345678'
 
 Check USAGE section for more cool examples.
@@ -96,13 +111,13 @@ Typical encrypt-and-shorten suitable for URL addresses.
 
     my $key = 'hc2riK8fku7ezavCBJdMPwmntZ1s0yU4bOLI3SHRqANXFVD69gTG5oYQjExplW';
     my $it = Integer::Tiny->new($key);
-    print $it->encrypt(48888851145); # om3R4e
+    print $it->encrypt('48888851145'); # om3R4e
 
 Time to clone someone, convert Integer to DNA sequence :)
 
     my $key = 'GCAT';
     my $it = Integer::Tiny->new($key);
-    print $it->encrypt(48888851145);  # ATCAGAGGGGAAAATGAC
+    print $it->encrypt('48888851145');  # ATCAGAGGGGAAAATGAC
 
 And so on... You're limited only by your imagination when inventing keys.
 
@@ -136,11 +151,20 @@ C<Carp::confess> will be called on missing or invalid key.
 
 =head3 encrypt
 
-    print $it->encrypt(48888851145); # rtetrwqyteytyr
+    print $it->encrypt('48888851145'); # rtetrwqyteytyr
+
+or
+
+    my $i = Math::BigInt->new('48888851145');
+    print $it->encrypt($i); # rtetrwqyteytyr
 
 Encrypt passed Integer value (bigint allowed) using key given in constructor.
 
 C<Carp::confess> will be called if value to encrypt is missing or not an Integer.
+
+WARNING: Do not use syntax shown below unless you are sure it fits in your machine integer size.
+
+    print $it->encrypt(48888851145); # integer may overflow
 
 NOTE: Passed value is treated as Integer so leading C<0> (zero) chars are ignored!
 
